@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Download, Settings as SettingsIcon } from 'lucide-react';
+import { Download, Settings as SettingsIcon, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { useDocumentStore } from '@/store/documentStore';
@@ -15,6 +15,71 @@ export default function Editor() {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  const [touchStartDist, setTouchStartDist] = useState<number | null>(null);
+
+  // Handle pinch to zoom
+  useEffect(() => {
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        const dist = Math.hypot(
+          e.touches[0].pageX - e.touches[1].pageX,
+          e.touches[0].pageY - e.touches[1].pageY
+        );
+        setTouchStartDist(dist);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && touchStartDist !== null) {
+        e.preventDefault(); // Prevent default browser zoom
+
+        const dist = Math.hypot(
+          e.touches[0].pageX - e.touches[1].pageX,
+          e.touches[0].pageY - e.touches[1].pageY
+        );
+
+        // Calculate new scale based on touch distance change
+        const scaleChange = dist / touchStartDist;
+
+        setScale(prevScale => {
+          // Limit scale between 0.3 and 3
+          let newScale = prevScale * scaleChange;
+          if (newScale < 0.3) newScale = 0.3;
+          if (newScale > 3) newScale = 3;
+          return newScale;
+        });
+
+        setTouchStartDist(dist);
+      }
+    };
+
+    const handleTouchEnd = () => {
+      setTouchStartDist(null);
+    };
+
+    // Add event listeners with non-passive to allow preventDefault
+    document.addEventListener('touchstart', handleTouchStart, { passive: false });
+    document.addEventListener('touchmove', handleTouchMove, { passive: false });
+    document.addEventListener('touchend', handleTouchEnd);
+
+    // Initial scale based on screen size for small devices
+    if (window.innerWidth <= 850) {
+       // Disable CSS variable scaling to let React handle it entirely
+       document.documentElement.style.setProperty('--pdf-scale', '1');
+
+       if (window.innerWidth <= 400) setScale(0.4);
+       else if (window.innerWidth <= 500) setScale(0.45);
+       else if (window.innerWidth <= 650) setScale(0.6);
+       else setScale(0.8);
+    }
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [touchStartDist]);
 
   // Derive the maximum page index from existing questions. Starts at 0.
   const maxPageIndex = useMemo(() => {
@@ -155,12 +220,35 @@ export default function Editor() {
     }
   };
 
+  const handleZoomIn = () => setScale(s => Math.min(3, s + 0.1));
+  const handleZoomOut = () => setScale(s => Math.max(0.3, s - 0.1));
+  const handleResetZoom = () => {
+    if (window.innerWidth <= 400) setScale(0.4);
+    else if (window.innerWidth <= 500) setScale(0.45);
+    else if (window.innerWidth <= 650) setScale(0.6);
+    else if (window.innerWidth <= 850) setScale(0.8);
+    else setScale(1);
+  };
+
   return (
-    <div className="min-h-screen bg-black text-white p-4 md:p-8 flex flex-col items-center font-sans overflow-x-hidden w-full" onClick={handleBackgroundClick}>
+    <div className="min-h-screen bg-black text-white p-4 md:p-8 flex flex-col items-center font-sans w-full" onClick={handleBackgroundClick}>
       {/* App Header */}
       <div className="w-full max-w-[800px] flex justify-between items-center mb-6 md:mb-8" onClick={(e) => e.stopPropagation()}>
         <h1 className="text-xl md:text-2xl font-bold truncate pr-4">Question Sheet</h1>
         <div className="flex items-center gap-2 md:gap-4 shrink-0">
+          {/* Zoom Controls for Mobile */}
+          <div className="hidden max-[850px]:flex items-center gap-1 bg-gray-900 rounded-lg p-1 mr-2 border border-gray-800">
+            <button onClick={handleZoomOut} className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-300" title="Zoom Out">
+              <ZoomOut size={16} />
+            </button>
+            <button onClick={handleResetZoom} className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-300 text-xs font-semibold w-10 text-center" title="Reset Zoom">
+              {Math.round(scale * 100)}%
+            </button>
+            <button onClick={handleZoomIn} className="p-1.5 hover:bg-gray-800 rounded transition-colors text-gray-300" title="Zoom In">
+              <ZoomIn size={16} />
+            </button>
+          </div>
+
           <button
             onClick={() => setIsSettingsOpen(true)}
             className="p-2 md:p-2.5 rounded hover:bg-gray-800 transition-colors shrink-0"
@@ -181,17 +269,26 @@ export default function Editor() {
       </div>
 
       {/* Pages Container - Wrapper added for horizontal scroll on mobile if needed */}
-      <div ref={containerRef} className="flex flex-col gap-6 md:gap-8 items-center w-full max-w-[100vw] overflow-x-hidden pb-32 hide-scrollbar pdf-container-scroll">
-        {Array.from({ length: totalPages }).map((_, pageIndex) => (
-          <div key={`page-wrapper-${pageIndex}`} className="pdf-page-wrapper w-full flex justify-center">
-            <div
-              key={`page-${pageIndex}`}
-              className={`pdf-page w-[800px] shrink-0 min-h-[1131px] bg-white text-black p-4 sm:p-8 md:p-12 pdf-preview relative flex flex-col mx-auto origin-top transition-transform sm:scale-100 max-[850px]:scale-[0.8] max-[650px]:scale-[0.6] max-[500px]:scale-[0.45] max-[400px]:scale-[0.4] ${
-                isGeneratingPdf ? 'pdf-export-mode !scale-100' : ''
-              }`}
-              style={{
-                color: 'black',
-              }}
+      <div className="w-full max-w-[100vw] overflow-auto pb-32 hide-scrollbar pdf-container-scroll touch-pan-x touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div
+          ref={containerRef}
+          className="flex flex-col gap-6 md:gap-8 items-center min-w-[max-content] mx-auto px-4 sm:px-0 transform-origin-top-center transition-transform"
+          style={{
+            transform: isGeneratingPdf ? 'scale(1)' : `scale(${scale})`,
+            transformOrigin: 'top center',
+            transition: isGeneratingPdf ? 'transform 0.3s' : 'none' // remove transition during pinch zoom
+          }}
+        >
+          {Array.from({ length: totalPages }).map((_, pageIndex) => (
+            <div key={`page-wrapper-${pageIndex}`} className="pdf-page-wrapper flex justify-center">
+              <div
+                key={`page-${pageIndex}`}
+                className={`pdf-page w-[800px] shrink-0 min-h-[1131px] bg-white text-black p-4 sm:p-8 md:p-12 pdf-preview relative flex flex-col mx-auto origin-top ${
+                  isGeneratingPdf ? 'pdf-export-mode' : ''
+                }`}
+                style={{
+                  color: 'black',
+                }}
             onClick={(e) => {
               // Click on the empty white page should also deselect if it isn't an element
               if (e.target === e.currentTarget) {
@@ -254,15 +351,16 @@ export default function Editor() {
           </div>
         ))}
 
-        {/* Add Page Button */}
-        {!isGeneratingPdf && (
-          <button
-            onClick={addPage}
-            className="mb-12 bg-gray-800 text-white px-6 py-3 rounded-full hover:bg-gray-700 transition-colors flex items-center gap-2 font-semibold shadow-lg"
-          >
-            <Download className="rotate-180" size={20} /> Add New Page
-          </button>
-        )}
+          {/* Add Page Button */}
+          {!isGeneratingPdf && (
+            <button
+              onClick={addPage}
+              className="mb-12 bg-gray-800 text-white px-6 py-3 rounded-full hover:bg-gray-700 transition-colors flex items-center gap-2 font-semibold shadow-lg mx-auto"
+            >
+              <Download className="rotate-180" size={20} /> Add New Page
+            </button>
+          )}
+        </div>
       </div>
 
       <ConfigPanel />

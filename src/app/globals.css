@@ -3,6 +3,7 @@
 :root {
   --background: #000000;
   --foreground: #ffffff;
+  --pdf-scale: 1;
 }
 
 body {
@@ -25,6 +26,7 @@ body {
 .pdf-container-scroll {
   width: 100%;
   overflow-x: auto;
+  overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
 

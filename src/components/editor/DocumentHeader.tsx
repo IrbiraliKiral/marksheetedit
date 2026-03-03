@@ -21,7 +21,7 @@ export function DocumentHeader() {
       <SelectableElement id="header-session" type="text" defaultFontSize="15px">
         <input
           type="text"
-          value={docState.session !== undefined ? docState.session : 'Session'}
+          value={docState.session}
           onChange={(e) => updateHeader('session', e.target.value)}
           className="text-center font-semibold w-full bg-transparent border-none focus:outline-none placeholder-gray-400 min-w-[300px]"
           placeholder="Session"
@@ -53,7 +53,7 @@ export function DocumentHeader() {
           <SelectableElement id="header-time" type="text" defaultFontSize="15px">
             <input
               type="text"
-              value={docState.time || 'Time 2 Hours 30 minutes'}
+              value={docState.time}
               onChange={(e) => updateHeader('time', e.target.value)}
               className="text-left w-48 sm:w-64 bg-transparent border-none focus:outline-none placeholder-gray-400 font-semibold"
               placeholder="Time 2 Hours 30 minutes"

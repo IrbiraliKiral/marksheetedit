@@ -27,13 +27,13 @@ interface DocumentStore {
 }
 
 const INITIAL_STATE: DocumentState = {
-  schoolName: 'Your School Name',
-  session: 'Session',
-  examinationType: 'Mid Term Examination',
-  className: 'Class X',
-  subjectName: 'Mathematics',
-  fullMarks: '100',
-  time: 'Time 2 Hours 30 minutes',
+  schoolName: '',
+  session: '',
+  examinationType: '',
+  className: '',
+  subjectName: '',
+  fullMarks: '',
+  time: '',
   questions: [],
   elementConfigs: {},
   settings: {

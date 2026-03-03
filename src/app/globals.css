@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  /* Prevent bounce scrolling on mobile */
+  overscroll-behavior-y: none;
+}
+
+/* Hide scrollbar for a cleaner mobile experience but allow scrolling */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Add support for scrolling scaled elements */
+.pdf-container-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure scaled content still takes up the correct logical space */
+@media (max-width: 850px) {
+  .pdf-page-wrapper {
+    margin-bottom: -226px; /* 1131 * 0.2 (1-0.8 scale) */
+  }
+}
+@media (max-width: 650px) {
+  .pdf-page-wrapper {
+    margin-bottom: -452px; /* 1131 * 0.4 (1-0.6 scale) */
+  }
+}
+@media (max-width: 500px) {
+  .pdf-page-wrapper {
+    margin-bottom: -622px; /* 1131 * 0.55 (1-0.45 scale) */
+  }
+}
+@media (max-width: 400px) {
+  .pdf-page-wrapper {
+    margin-bottom: -678px; /* 1131 * 0.6 (1-0.4 scale) */
+  }
+}
+
+.pdf-preview {
+  background: white;
+  color: black;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.pdf-preview input,
+.pdf-preview textarea {
+  color: black;
+  background: transparent;
+  outline: none;
+  border-bottom: 1px solid transparent;
+}
+
+.pdf-preview input:focus,
+.pdf-preview textarea:focus {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.pdf-preview input::placeholder,
+.pdf-preview textarea::placeholder {
+  color: #9ca3af;
+}
+
+/* Hide buttons and interactive elements when printing/generating PDF */
+.pdf-export-mode .no-print {
+  display: none !important;
+}
+
+.pdf-export-mode input::placeholder,
+.pdf-export-mode textarea::placeholder {
+  color: transparent !important;
+}
+
+.pdf-export-mode {
+  box-shadow: none !important;
+  background: white !important; /* Keep overall sheet white */
+}
+
+/* Remove all other background styling from elements inside the sheet */
+.pdf-export-mode *,
+.pdf-export-mode .bg-gray-50,
+.pdf-export-mode .ring-2 {
+  background-color: transparent !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 transparent !important;
+}
+
+.pdf-export-mode input,
+.pdf-export-mode textarea {
+  border-bottom: 1px solid transparent !important;
+}
+
+/* Make sure table lines are visible but background is transparent */
+.pdf-export-mode table,
+.pdf-export-mode th,
+.pdf-export-mode td {
+  border-color: black !important;
+}
+
+/* Print specific styles */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  .pdf-preview {
+    box-shadow: none !important;
+    background: white !important;
+  }
+  .pdf-preview *,
+  .pdf-preview .bg-gray-50,
+  .pdf-preview .ring-2 {
+    background-color: transparent !important;
+    box-shadow: none !important;
+    --tw-ring-shadow: 0 0 transparent !important;
+  }
+  input, textarea {
+    border-bottom: 1px solid transparent !important;
+  }
+  input::placeholder,
+  textarea::placeholder {
+    color: transparent !important;
+  }
+}

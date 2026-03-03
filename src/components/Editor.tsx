@@ -1,0 +1,272 @@
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { Download, Settings as SettingsIcon } from 'lucide-react';
+import { toPng } from 'html-to-image';
+import jsPDF from 'jspdf';
+import { useDocumentStore } from '@/store/documentStore';
+import { DocumentHeader } from '@/components/editor/DocumentHeader';
+import { InstructionBlock } from '@/components/questions/InstructionBlock';
+import { TableBlock } from '@/components/questions/TableBlock';
+import { EditorControls } from '@/components/editor/EditorControls';
+import { ConfigPanel } from '@/components/editor/ConfigPanel';
+import { SettingsSidebar } from '@/components/editor/SettingsSidebar';
+
+export default function Editor() {
+  const { docState, activeInstructionId, setSelectedElement } = useDocumentStore();
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Derive the maximum page index from existing questions. Starts at 0.
+  const maxPageIndex = useMemo(() => {
+    let max = 0;
+    for (const q of docState.questions) {
+      if (q.pageIndex > max) max = q.pageIndex;
+    }
+    return max;
+  }, [docState.questions]);
+
+  // Keep track of total pages (ensuring there's always an empty one at the end if needed)
+  const [totalPages, setTotalPages] = useState(1);
+
+  useEffect(() => {
+    setTotalPages(maxPageIndex + 1);
+  }, [maxPageIndex]);
+
+  const addPage = () => {
+    setTotalPages(prev => prev + 1);
+  };
+
+  const generatePDF = async () => {
+    if (!containerRef.current) return;
+
+    setIsGeneratingPdf(true);
+
+    try {
+      // Small delay to allow react to render the 'isGeneratingPdf' state (hiding no-print elements)
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pageElements = containerRef.current.querySelectorAll('.pdf-page');
+
+      // Filter out totally empty pages to skip them
+      const pagesToPrint = Array.from(pageElements).filter((pageElement, index) => {
+        // Page 0 (first page) is never empty due to headers
+        if (index === 0) return true;
+
+        // Check if other pages have any questions
+        const hasQuestions = docState.questions.some(q => q.pageIndex === index);
+        return hasQuestions;
+      });
+
+      for (let i = 0; i < pagesToPrint.length; i++) {
+        const element = pagesToPrint[i] as HTMLElement;
+
+        // Temporarily store original styles to restore later
+        const originalTransition = element.style.transition;
+        const originalBoxShadow = element.style.boxShadow;
+        const originalBorderRadius = element.style.borderRadius;
+        element.style.transition = 'none'; // Disable animations for screenshot
+        element.style.boxShadow = 'none'; // Force no box shadow on main container
+        element.style.borderRadius = '0'; // Flat for print
+
+        // Disable any input elements from having focus while capturing
+        const activeElement = document.activeElement as HTMLElement;
+        if (activeElement) {
+          activeElement.blur();
+        }
+
+        const dataUrl = await toPng(element, {
+          quality: 1,
+          backgroundColor: '#ffffff',
+          pixelRatio: 2,
+          skipFonts: true, // Specifically skips problematic font embedding logic in html-to-image
+          fontEmbedCSS: '', // Double measure to ensure it doesn't fail on fonts
+          cacheBust: true, // Prevent cached assets from breaking rendering
+          filter: (node: any) => {
+            // Additional layer of safety to ensure UI/ReactDevTools don't interfere
+            if (node.tagName === 'IFRAME') return false;
+            if (node.tagName === 'LINK') return false; // Prevent trying to fetch external styles/fonts inline
+            if (node.tagName === 'STYLE') return false;
+
+            // Must safely cast or check properties since some nodes might not be HTMLElements (e.g., SVG, Text nodes)
+            if (node.nodeType !== 1) return true; // 1 === ELEMENT_NODE
+
+            const htmlNode = node as HTMLElement;
+
+            // Hide controls completely during rendering
+            if (htmlNode.classList && htmlNode.classList.contains('no-print')) return false;
+
+            // Clean up styling artifacts directly
+            if (htmlNode.style) {
+              htmlNode.style.boxShadow = 'none';
+            }
+            if (htmlNode.classList && htmlNode.classList.contains('ring-2')) {
+              htmlNode.classList.remove('ring-2', 'ring-gray-200', 'bg-gray-50');
+              htmlNode.style.backgroundColor = 'transparent';
+            }
+            if (htmlNode.tagName === 'TH' || htmlNode.tagName === 'TD') {
+              htmlNode.style.backgroundColor = 'transparent';
+            }
+            if (htmlNode.classList && htmlNode.classList.contains('bg-gray-50')) {
+              htmlNode.style.backgroundColor = 'transparent';
+            }
+
+            return true;
+          },
+          style: {
+            transform: 'scale(1)',
+            transformOrigin: 'top left',
+            width: element.offsetWidth + 'px',
+            height: element.offsetHeight + 'px',
+            margin: '0',
+            boxShadow: 'none',
+          }
+        });
+
+        // Restore original styles
+        element.style.transition = originalTransition;
+        element.style.boxShadow = originalBoxShadow;
+        element.style.borderRadius = originalBorderRadius;
+
+        const imgProps = pdf.getImageProperties(dataUrl);
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
+      }
+
+      pdf.save('question-sheet.pdf');
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  const handleBackgroundClick = (e: React.MouseEvent) => {
+    // Only deselect if clicking directly on the background container (not on elements inside)
+    if (e.target === e.currentTarget) {
+      setSelectedElement(null);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-black text-white p-4 md:p-8 flex flex-col items-center font-sans overflow-x-hidden w-full" onClick={handleBackgroundClick}>
+      {/* App Header */}
+      <div className="w-full max-w-[800px] flex justify-between items-center mb-6 md:mb-8" onClick={(e) => e.stopPropagation()}>
+        <h1 className="text-xl md:text-2xl font-bold truncate pr-4">Question Sheet</h1>
+        <div className="flex items-center gap-2 md:gap-4 shrink-0">
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="p-2 md:p-2.5 rounded hover:bg-gray-800 transition-colors shrink-0"
+            title="Settings"
+          >
+            <SettingsIcon size={20} />
+          </button>
+          <button
+            onClick={generatePDF}
+            disabled={isGeneratingPdf}
+            className="bg-white text-black px-3 py-2 md:px-4 md:py-2 rounded flex items-center gap-2 hover:bg-gray-200 transition-colors disabled:opacity-50 text-sm md:text-base shrink-0"
+          >
+            <Download size={18} />
+            <span className="hidden sm:inline">{isGeneratingPdf ? 'Generating...' : 'Generate PDF'}</span>
+            <span className="sm:hidden">{isGeneratingPdf ? 'Wait...' : 'PDF'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Pages Container - Wrapper added for horizontal scroll on mobile if needed */}
+      <div ref={containerRef} className="flex flex-col gap-6 md:gap-8 items-center w-full max-w-[100vw] overflow-x-hidden pb-32 hide-scrollbar pdf-container-scroll">
+        {Array.from({ length: totalPages }).map((_, pageIndex) => (
+          <div key={`page-wrapper-${pageIndex}`} className="pdf-page-wrapper w-full flex justify-center">
+            <div
+              key={`page-${pageIndex}`}
+              className={`pdf-page w-[800px] shrink-0 min-h-[1131px] bg-white text-black p-4 sm:p-8 md:p-12 pdf-preview relative flex flex-col mx-auto origin-top transition-transform sm:scale-100 max-[850px]:scale-[0.8] max-[650px]:scale-[0.6] max-[500px]:scale-[0.45] max-[400px]:scale-[0.4] ${
+                isGeneratingPdf ? 'pdf-export-mode !scale-100' : ''
+              }`}
+              style={{
+                color: 'black',
+              }}
+            onClick={(e) => {
+              // Click on the empty white page should also deselect if it isn't an element
+              if (e.target === e.currentTarget) {
+                setSelectedElement(null);
+              }
+            }}
+          >
+            {pageIndex === 0 && <DocumentHeader />}
+
+            {/* Questions Section for this page */}
+            <div className="flex flex-col flex-grow" style={{ fontSize: '12px', marginTop: pageIndex === 0 ? '1rem' : '0' }}>
+              {docState.questions
+                .filter((q) => q.pageIndex === pageIndex)
+                .map((q) => {
+                  if (q.type === 'instruction') {
+                    return (
+                      <div key={q.id} className="mb-6 relative group">
+                        <InstructionBlock
+                          question={q}
+                          isActive={activeInstructionId === q.id}
+                          isGeneratingPdf={isGeneratingPdf}
+                        />
+                      </div>
+                    );
+                  }
+
+                  if (q.type === 'table') {
+                    return (
+                      <div key={q.id} className="mb-6 relative group">
+                         <TableBlock question={q} />
+                      </div>
+                    );
+                  }
+
+                  return null;
+                })}
+
+              {/* Show controls inline right after the newest question */}
+              {docState.questions.filter(q => q.pageIndex === pageIndex).length > 0 ? (
+                <div className="mt-2 mb-4 flex justify-center opacity-40 hover:opacity-100 transition-opacity">
+                   <EditorControls pageIndex={pageIndex} compact={true} />
+                </div>
+              ) : (
+                <div className="mt-8 flex justify-center">
+                   <EditorControls pageIndex={pageIndex} />
+                </div>
+              )}
+            </div>
+
+            {/* Always show EditorControls at the bottom of the page */}
+            <div className="mt-auto pt-8 pb-4 opacity-30 hover:opacity-100 transition-opacity">
+               <EditorControls pageIndex={pageIndex} />
+            </div>
+
+            {/* Page Number at the bottom center */}
+            <div className="absolute bottom-4 left-0 w-full flex justify-center text-black font-semibold" style={{ fontSize: '15px' }}>
+              [{pageIndex + 1}]
+            </div>
+          </div>
+          </div>
+        ))}
+
+        {/* Add Page Button */}
+        {!isGeneratingPdf && (
+          <button
+            onClick={addPage}
+            className="mb-12 bg-gray-800 text-white px-6 py-3 rounded-full hover:bg-gray-700 transition-colors flex items-center gap-2 font-semibold shadow-lg"
+          >
+            <Download className="rotate-180" size={20} /> Add New Page
+          </button>
+        )}
+      </div>
+
+      <ConfigPanel />
+      <SettingsSidebar isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+    </div>
+  );
+}

@@ -30,26 +30,9 @@ body {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Ensure scaled content still takes up the correct logical space */
-@media (max-width: 850px) {
-  .pdf-page-wrapper {
-    margin-bottom: -226px; /* 1131 * 0.2 (1-0.8 scale) */
-  }
-}
-@media (max-width: 650px) {
-  .pdf-page-wrapper {
-    margin-bottom: -452px; /* 1131 * 0.4 (1-0.6 scale) */
-  }
-}
-@media (max-width: 500px) {
-  .pdf-page-wrapper {
-    margin-bottom: -622px; /* 1131 * 0.55 (1-0.45 scale) */
-  }
-}
-@media (max-width: 400px) {
-  .pdf-page-wrapper {
-    margin-bottom: -678px; /* 1131 * 0.6 (1-0.4 scale) */
-  }
+/* Base class no longer needs explicit margins when scaling is handled via wrapper width */
+.pdf-page-wrapper {
+  transition: all 0.1s;
 }
 
 .pdf-preview {

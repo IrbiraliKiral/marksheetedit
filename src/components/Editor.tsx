@@ -271,24 +271,33 @@ export default function Editor() {
       {/* Pages Container - Wrapper added for horizontal scroll on mobile if needed */}
       <div className="w-full max-w-[100vw] overflow-auto pb-32 hide-scrollbar pdf-container-scroll touch-pan-x touch-pan-y" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div
-          ref={containerRef}
-          className="flex flex-col gap-6 md:gap-8 items-center min-w-[max-content] mx-auto px-4 sm:px-0 transform-origin-top-center transition-transform"
+          className="mx-auto flex justify-center"
           style={{
-            transform: isGeneratingPdf ? 'scale(1)' : `scale(${scale})`,
-            transformOrigin: 'top center',
-            transition: isGeneratingPdf ? 'transform 0.3s' : 'none' // remove transition during pinch zoom
+            minWidth: isGeneratingPdf ? '800px' : `${800 * scale}px`,
+            width: isGeneratingPdf ? '800px' : `${800 * scale}px`,
+            transition: isGeneratingPdf ? 'none' : 'all 0.1s ease-out'
           }}
         >
-          {Array.from({ length: totalPages }).map((_, pageIndex) => (
-            <div key={`page-wrapper-${pageIndex}`} className="pdf-page-wrapper flex justify-center">
-              <div
-                key={`page-${pageIndex}`}
-                className={`pdf-page w-[800px] shrink-0 min-h-[1131px] bg-white text-black p-4 sm:p-8 md:p-12 pdf-preview relative flex flex-col mx-auto origin-top ${
-                  isGeneratingPdf ? 'pdf-export-mode' : ''
-                }`}
-                style={{
-                  color: 'black',
-                }}
+          <div
+            className="flex flex-col items-center"
+            style={{
+              width: '800px',
+              transform: isGeneratingPdf ? 'scale(1)' : `scale(${scale})`,
+              transformOrigin: 'top left', // Scale from top left when inside a fixed width container
+              transition: isGeneratingPdf ? 'none' : 'transform 0.1s ease-out'
+            }}
+          >
+            <div ref={containerRef} className="flex flex-col gap-6 md:gap-8 items-center w-full pb-[100px]">
+              {Array.from({ length: totalPages }).map((_, pageIndex) => (
+                <div key={`page-wrapper-${pageIndex}`} className="pdf-page-wrapper flex justify-center w-full">
+                  <div
+                    key={`page-${pageIndex}`}
+                    className={`pdf-page w-[800px] shrink-0 min-h-[1131px] bg-white text-black p-4 sm:p-8 md:p-12 pdf-preview relative flex flex-col mx-auto origin-top ${
+                      isGeneratingPdf ? 'pdf-export-mode' : ''
+                    }`}
+                    style={{
+                      color: 'black',
+                    }}
             onClick={(e) => {
               // Click on the empty white page should also deselect if it isn't an element
               if (e.target === e.currentTarget) {
@@ -327,21 +336,19 @@ export default function Editor() {
                 })}
 
               {/* Show controls inline right after the newest question */}
-              {docState.questions.filter(q => q.pageIndex === pageIndex).length > 0 ? (
+              {docState.questions.filter(q => q.pageIndex === pageIndex).length > 0 && (
                 <div className="mt-2 mb-4 flex justify-center opacity-40 hover:opacity-100 transition-opacity">
                    <EditorControls pageIndex={pageIndex} compact={true} />
-                </div>
-              ) : (
-                <div className="mt-8 flex justify-center">
-                   <EditorControls pageIndex={pageIndex} />
                 </div>
               )}
             </div>
 
-            {/* Always show EditorControls at the bottom of the page */}
-            <div className="mt-auto pt-8 pb-4 opacity-30 hover:opacity-100 transition-opacity">
-               <EditorControls pageIndex={pageIndex} />
-            </div>
+            {/* Always show EditorControls at the bottom of the page if there are no questions */}
+            {docState.questions.filter(q => q.pageIndex === pageIndex).length === 0 && (
+              <div className="mt-auto pt-8 pb-4 opacity-30 hover:opacity-100 transition-opacity">
+                 <EditorControls pageIndex={pageIndex} />
+              </div>
+            )}
 
             {/* Page Number at the bottom center */}
             <div className="absolute bottom-4 left-0 w-full flex justify-center text-black font-semibold" style={{ fontSize: '15px' }}>
@@ -351,15 +358,19 @@ export default function Editor() {
           </div>
         ))}
 
-          {/* Add Page Button */}
-          {!isGeneratingPdf && (
-            <button
-              onClick={addPage}
-              className="mb-12 bg-gray-800 text-white px-6 py-3 rounded-full hover:bg-gray-700 transition-colors flex items-center gap-2 font-semibold shadow-lg mx-auto"
-            >
-              <Download className="rotate-180" size={20} /> Add New Page
-            </button>
-          )}
+              <div className="mt-8 flex justify-center w-full">
+                {/* Add Page Button */}
+                {!isGeneratingPdf && (
+                  <button
+                    onClick={addPage}
+                    className="mb-12 bg-gray-800 text-white px-6 py-3 rounded-full hover:bg-gray-700 transition-colors flex items-center gap-2 font-semibold shadow-lg mx-auto"
+                  >
+                    <Download className="rotate-180" size={20} /> Add New Page
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 

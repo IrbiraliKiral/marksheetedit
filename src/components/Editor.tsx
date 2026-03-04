@@ -16,22 +16,27 @@ export default function Editor() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-  const [touchStartDist, setTouchStartDist] = useState<number | null>(null);
+  const touchStartDistRef = useRef<number | null>(null);
+  const scaleRef = useRef(scale);
+
+  // Keep scaleRef in sync with scale state
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
 
   // Handle pinch to zoom
   useEffect(() => {
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
-        const dist = Math.hypot(
+        touchStartDistRef.current = Math.hypot(
           e.touches[0].pageX - e.touches[1].pageX,
           e.touches[0].pageY - e.touches[1].pageY
         );
-        setTouchStartDist(dist);
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && touchStartDist !== null) {
+      if (e.touches.length === 2 && touchStartDistRef.current !== null) {
         e.preventDefault(); // Prevent default browser zoom
 
         const dist = Math.hypot(
@@ -39,23 +44,22 @@ export default function Editor() {
           e.touches[0].pageY - e.touches[1].pageY
         );
 
-        // Calculate new scale based on touch distance change
-        const scaleChange = dist / touchStartDist;
+        const scaleChange = dist / touchStartDistRef.current;
 
         setScale(prevScale => {
-          // Limit scale between 0.3 and 3
           let newScale = prevScale * scaleChange;
           if (newScale < 0.3) newScale = 0.3;
           if (newScale > 3) newScale = 3;
           return newScale;
         });
 
-        setTouchStartDist(dist);
+        // Update baseline for the next move event
+        touchStartDistRef.current = dist;
       }
     };
 
     const handleTouchEnd = () => {
-      setTouchStartDist(null);
+      touchStartDistRef.current = null;
     };
 
     // Add event listeners with non-passive to allow preventDefault
@@ -65,13 +69,12 @@ export default function Editor() {
 
     // Initial scale based on screen size for small devices
     if (window.innerWidth <= 850) {
-       // Disable CSS variable scaling to let React handle it entirely
-       document.documentElement.style.setProperty('--pdf-scale', '1');
+      document.documentElement.style.setProperty('--pdf-scale', '1');
 
-       if (window.innerWidth <= 400) setScale(0.4);
-       else if (window.innerWidth <= 500) setScale(0.45);
-       else if (window.innerWidth <= 650) setScale(0.6);
-       else setScale(0.8);
+      if (window.innerWidth <= 400) setScale(0.4);
+      else if (window.innerWidth <= 500) setScale(0.45);
+      else if (window.innerWidth <= 650) setScale(0.6);
+      else setScale(0.8);
     }
 
     return () => {
@@ -79,7 +82,8 @@ export default function Editor() {
       document.removeEventListener('touchmove', handleTouchMove);
       document.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [touchStartDist]);
+  }, []); // Run once — refs give handlers live access without re-registration
+
 
   // Derive the maximum page index from existing questions. Starts at 0.
   const maxPageIndex = useMemo(() => {
@@ -140,6 +144,14 @@ export default function Editor() {
           activeElement.blur();
         }
 
+        // Strip placeholder attributes from all inputs/textareas so empty fields
+        // render as truly blank (html-to-image captures placeholder text otherwise)
+        const inputsAndTextareas = Array.from(
+          element.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
+        );
+        const savedPlaceholders = inputsAndTextareas.map(el => el.getAttribute('placeholder'));
+        inputsAndTextareas.forEach(el => el.removeAttribute('placeholder'));
+
         const dataUrl = await toPng(element, {
           quality: 1,
           backgroundColor: '#ffffff',
@@ -169,6 +181,17 @@ export default function Editor() {
               htmlNode.classList.remove('ring-2', 'ring-gray-200', 'bg-gray-50');
               htmlNode.style.backgroundColor = 'transparent';
             }
+            // Remove efficient-mode border-b selection/hover indicators from SelectableElement wrappers
+            if (htmlNode.classList && (htmlNode.classList.contains('border-b-2') || htmlNode.classList.contains('hover:border-b-2'))) {
+              htmlNode.classList.remove('border-b-2', 'border-gray-400', 'hover:border-b-2', 'hover:border-gray-200', '-mb-[2px]');
+              htmlNode.style.borderBottom = 'none';
+              htmlNode.style.marginBottom = '0';
+            }
+            // Remove any ring/outline selection styling
+            if (htmlNode.classList && (htmlNode.classList.contains('ring-blue-500') || htmlNode.classList.contains('ring-1') || htmlNode.classList.contains('ring-offset-2'))) {
+              htmlNode.classList.remove('ring-1', 'ring-blue-500', 'ring-offset-2', 'ring-offset-transparent', 'ring-blue-300');
+              htmlNode.style.outline = 'none';
+            }
             if (htmlNode.tagName === 'TH' || htmlNode.tagName === 'TD') {
               htmlNode.style.backgroundColor = 'transparent';
             }
@@ -192,6 +215,12 @@ export default function Editor() {
         element.style.transition = originalTransition;
         element.style.boxShadow = originalBoxShadow;
         element.style.borderRadius = originalBorderRadius;
+
+        // Restore placeholder attributes
+        inputsAndTextareas.forEach((el, idx) => {
+          const ph = savedPlaceholders[idx];
+          if (ph !== null) el.setAttribute('placeholder', ph);
+        });
 
         const imgProps = pdf.getImageProperties(dataUrl);
         const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -292,71 +321,70 @@ export default function Editor() {
                 <div key={`page-wrapper-${pageIndex}`} className="pdf-page-wrapper flex justify-center w-full">
                   <div
                     key={`page-${pageIndex}`}
-                    className={`pdf-page w-[800px] shrink-0 min-h-[1131px] bg-white text-black p-4 sm:p-8 md:p-12 pdf-preview relative flex flex-col mx-auto origin-top ${
-                      isGeneratingPdf ? 'pdf-export-mode' : ''
-                    }`}
+                    className={`pdf-page w-[800px] shrink-0 min-h-[1131px] bg-white text-black p-4 sm:p-8 md:p-12 pdf-preview relative flex flex-col mx-auto origin-top ${isGeneratingPdf ? 'pdf-export-mode' : ''
+                      }`}
                     style={{
                       color: 'black',
                     }}
-            onClick={(e) => {
-              // Click on the empty white page should also deselect if it isn't an element
-              if (e.target === e.currentTarget) {
-                setSelectedElement(null);
-              }
-            }}
-          >
-            {pageIndex === 0 && <DocumentHeader />}
+                    onClick={(e) => {
+                      // Click on the empty white page should also deselect if it isn't an element
+                      if (e.target === e.currentTarget) {
+                        setSelectedElement(null);
+                      }
+                    }}
+                  >
+                    {pageIndex === 0 && <DocumentHeader />}
 
-            {/* Questions Section for this page */}
-            <div className="flex flex-col flex-grow" style={{ fontSize: '12px', marginTop: pageIndex === 0 ? '1rem' : '0' }}>
-              {docState.questions
-                .filter((q) => q.pageIndex === pageIndex)
-                .map((q) => {
-                  if (q.type === 'instruction') {
-                    return (
-                      <div key={q.id} className="mb-6 relative group">
-                        <InstructionBlock
-                          question={q}
-                          isActive={activeInstructionId === q.id}
-                          isGeneratingPdf={isGeneratingPdf}
-                        />
+                    {/* Questions Section for this page */}
+                    <div className="flex flex-col flex-grow" style={{ fontSize: '12px', marginTop: pageIndex === 0 ? '1rem' : '0' }}>
+                      {docState.questions
+                        .filter((q) => q.pageIndex === pageIndex)
+                        .map((q) => {
+                          if (q.type === 'instruction') {
+                            return (
+                              <div key={q.id} className="mb-6 relative group">
+                                <InstructionBlock
+                                  question={q}
+                                  isActive={activeInstructionId === q.id}
+                                  isGeneratingPdf={isGeneratingPdf}
+                                />
+                              </div>
+                            );
+                          }
+
+                          if (q.type === 'table') {
+                            return (
+                              <div key={q.id} className="mb-6 relative group">
+                                <TableBlock question={q} />
+                              </div>
+                            );
+                          }
+
+                          return null;
+                        })}
+
+                      {/* Show controls inline right after the newest question */}
+                      {docState.questions.filter(q => q.pageIndex === pageIndex).length > 0 && (
+                        <div className="mt-2 mb-4 flex justify-center opacity-40 hover:opacity-100 transition-opacity">
+                          <EditorControls pageIndex={pageIndex} compact={true} />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Always show EditorControls at the bottom of the page if there are no questions */}
+                    {docState.questions.filter(q => q.pageIndex === pageIndex).length === 0 && (
+                      <div className="mt-auto pt-8 pb-4 opacity-30 hover:opacity-100 transition-opacity">
+                        <EditorControls pageIndex={pageIndex} />
                       </div>
-                    );
-                  }
+                    )}
 
-                  if (q.type === 'table') {
-                    return (
-                      <div key={q.id} className="mb-6 relative group">
-                         <TableBlock question={q} />
-                      </div>
-                    );
-                  }
-
-                  return null;
-                })}
-
-              {/* Show controls inline right after the newest question */}
-              {docState.questions.filter(q => q.pageIndex === pageIndex).length > 0 && (
-                <div className="mt-2 mb-4 flex justify-center opacity-40 hover:opacity-100 transition-opacity">
-                   <EditorControls pageIndex={pageIndex} compact={true} />
+                    {/* Page Number at the bottom center */}
+                    <div className="absolute bottom-4 left-0 w-full flex justify-center text-black font-semibold" style={{ fontSize: '15px' }}>
+                      [{pageIndex + 1}]
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
-
-            {/* Always show EditorControls at the bottom of the page if there are no questions */}
-            {docState.questions.filter(q => q.pageIndex === pageIndex).length === 0 && (
-              <div className="mt-auto pt-8 pb-4 opacity-30 hover:opacity-100 transition-opacity">
-                 <EditorControls pageIndex={pageIndex} />
-              </div>
-            )}
-
-            {/* Page Number at the bottom center */}
-            <div className="absolute bottom-4 left-0 w-full flex justify-center text-black font-semibold" style={{ fontSize: '15px' }}>
-              [{pageIndex + 1}]
-            </div>
-          </div>
-          </div>
-        ))}
+              ))}
 
               <div className="mt-8 flex justify-center w-full">
                 {/* Add Page Button */}

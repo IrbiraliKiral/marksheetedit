@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
-import { DocumentState, InstructionQuestion, TableQuestion, TableRow, ElementConfig } from '@/types';
+import { DocumentState, InstructionQuestion, TableQuestion, TableRow, ElementConfig, InlineSegment } from '@/types';
 
 interface DocumentStore {
   docState: DocumentState;
@@ -24,6 +24,26 @@ interface DocumentStore {
   updateTableRow: (tableId: string, rowId: string, field: keyof TableRow, value: string) => void;
   addTableRow: (tableId: string) => void;
   removeQuestion: (id: string) => void;
+
+  // Inline fraction actions (operate on InlineSegment[] content within an instruction or sub-question)
+  addFractionToInstruction: (instructionId: string) => void;
+  addFractionToSubQuestion: (instructionId: string, subQuestionId: string) => void;
+  updateInstructionSegment: (instructionId: string, segmentId: string, field: 'value' | 'numerator' | 'denominator', value: string) => void;
+  updateSubQuestionSegment: (instructionId: string, subQuestionId: string, segmentId: string, field: 'value' | 'numerator' | 'denominator', value: string) => void;
+  removeInstructionSegment: (instructionId: string, segmentId: string) => void;
+  removeSubQuestionSegment: (instructionId: string, subQuestionId: string, segmentId: string) => void;
+}
+
+// Helper: ensure an instruction has a content array, seeding from plain `instruction` string if needed
+function ensureContent(q: InstructionQuestion): InlineSegment[] {
+  if (q.content && q.content.length > 0) return q.content;
+  return [{ type: 'text', id: uuidv4(), value: q.instruction }];
+}
+
+// Helper for sub-questions
+function ensureSubContent(sq: { instruction: string; content?: InlineSegment[] }): InlineSegment[] {
+  if (sq.content && sq.content.length > 0) return sq.content;
+  return [{ type: 'text', id: uuidv4(), value: sq.instruction }];
 }
 
 const INITIAL_STATE: DocumentState = {
@@ -90,7 +110,8 @@ export const useDocumentStore = create<DocumentStore>()(
           serialNumber: '',
           instruction: '',
           marks: '',
-          subQuestions: []
+          subQuestions: [],
+          content: [{ type: 'text', id: uuidv4(), value: '' }]
         };
         set((state) => ({
           docState: {
@@ -134,7 +155,8 @@ export const useDocumentStore = create<DocumentStore>()(
                       id: uuidv4(),
                       serialNumber: '',
                       instruction: '',
-                      marks: ''
+                      marks: '',
+                      content: [{ type: 'text' as const, id: uuidv4(), value: '' }]
                     }
                   ]
                 };
@@ -225,7 +247,133 @@ export const useDocumentStore = create<DocumentStore>()(
           },
           activeInstructionId: state.activeInstructionId === id ? null : state.activeInstructionId
         }));
-      }
+      },
+
+      // ---- Inline fraction actions ----
+
+      addFractionToInstruction: (instructionId) => {
+        set((state) => ({
+          docState: {
+            ...state.docState,
+            questions: state.docState.questions.map(q => {
+              if (q.id === instructionId && q.type === 'instruction') {
+                const existing = ensureContent(q);
+                const fraction: InlineSegment = { type: 'fraction', id: uuidv4(), numerator: '', denominator: '' };
+                const trailing: InlineSegment = { type: 'text', id: uuidv4(), value: '' };
+                return { ...q, content: [...existing, fraction, trailing] };
+              }
+              return q;
+            })
+          }
+        }));
+      },
+
+      addFractionToSubQuestion: (instructionId, subQuestionId) => {
+        set((state) => ({
+          docState: {
+            ...state.docState,
+            questions: state.docState.questions.map(q => {
+              if (q.id === instructionId && q.type === 'instruction') {
+                return {
+                  ...q,
+                  subQuestions: q.subQuestions.map(sq => {
+                    if (sq.id !== subQuestionId) return sq;
+                    const existing = ensureSubContent(sq);
+                    const fraction: InlineSegment = { type: 'fraction', id: uuidv4(), numerator: '', denominator: '' };
+                    const trailing: InlineSegment = { type: 'text', id: uuidv4(), value: '' };
+                    return { ...sq, content: [...existing, fraction, trailing] };
+                  })
+                };
+              }
+              return q;
+            })
+          }
+        }));
+      },
+
+      updateInstructionSegment: (instructionId, segmentId, field, value) => {
+        set((state) => ({
+          docState: {
+            ...state.docState,
+            questions: state.docState.questions.map(q => {
+              if (q.id === instructionId && q.type === 'instruction') {
+                return {
+                  ...q,
+                  content: (q.content ?? []).map(seg =>
+                    seg.id === segmentId ? { ...seg, [field]: value } as InlineSegment : seg
+                  )
+                };
+              }
+              return q;
+            })
+          }
+        }));
+      },
+
+      updateSubQuestionSegment: (instructionId, subQuestionId, segmentId, field, value) => {
+        set((state) => ({
+          docState: {
+            ...state.docState,
+            questions: state.docState.questions.map(q => {
+              if (q.id === instructionId && q.type === 'instruction') {
+                return {
+                  ...q,
+                  subQuestions: q.subQuestions.map(sq => {
+                    if (sq.id !== subQuestionId) return sq;
+                    return {
+                      ...sq,
+                      content: (sq.content ?? []).map(seg =>
+                        seg.id === segmentId ? { ...seg, [field]: value } as InlineSegment : seg
+                      )
+                    };
+                  })
+                };
+              }
+              return q;
+            })
+          }
+        }));
+      },
+
+      removeInstructionSegment: (instructionId, segmentId) => {
+        set((state) => ({
+          docState: {
+            ...state.docState,
+            questions: state.docState.questions.map(q => {
+              if (q.id === instructionId && q.type === 'instruction') {
+                return {
+                  ...q,
+                  content: (q.content ?? []).filter(seg => seg.id !== segmentId)
+                };
+              }
+              return q;
+            })
+          }
+        }));
+      },
+
+      removeSubQuestionSegment: (instructionId, subQuestionId, segmentId) => {
+        set((state) => ({
+          docState: {
+            ...state.docState,
+            questions: state.docState.questions.map(q => {
+              if (q.id === instructionId && q.type === 'instruction') {
+                return {
+                  ...q,
+                  subQuestions: q.subQuestions.map(sq => {
+                    if (sq.id !== subQuestionId) return sq;
+                    return {
+                      ...sq,
+                      content: (sq.content ?? []).filter(seg => seg.id !== segmentId)
+                    };
+                  })
+                };
+              }
+              return q;
+            })
+          }
+        }));
+      },
     }),
     {
       name: 'question-sheet-storage',

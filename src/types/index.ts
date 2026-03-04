@@ -1,9 +1,13 @@
 export type QuestionType = 'instruction' | 'table';
 
+export type InlineSegment =
+  | { type: 'text'; id: string; value: string }
+  | { type: 'fraction'; id: string; numerator: string; denominator: string };
+
 export interface BaseQuestion {
   id: string;
   type: QuestionType;
-  pageIndex: number; // Added to track which page the question is on
+  pageIndex: number;
 }
 
 export interface InstructionQuestion extends BaseQuestion {
@@ -12,6 +16,8 @@ export interface InstructionQuestion extends BaseQuestion {
   instruction: string;
   marks: string;
   subQuestions: SubQuestion[];
+  // Inline rich content — when present, overrides the plain `instruction` string
+  content?: InlineSegment[];
 }
 
 export interface SubQuestion {
@@ -19,6 +25,8 @@ export interface SubQuestion {
   serialNumber: string;
   instruction: string;
   marks: string;
+  // Inline rich content — when present, overrides the plain `instruction` string
+  content?: InlineSegment[];
 }
 
 export interface TableQuestion extends BaseQuestion {
@@ -39,7 +47,6 @@ export interface ElementConfig {
   fontSize?: string;
   x?: number;
   y?: number;
-  // Generic text content if needed, though most elements use docState for their content
   content?: string;
 }
 

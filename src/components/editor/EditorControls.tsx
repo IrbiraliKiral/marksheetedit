@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Plus, X, PlusCircle } from 'lucide-react';
+import { Plus, X, PlusCircle, Divide } from 'lucide-react';
 import { useDocumentStore } from '@/store/documentStore';
 
 interface Props {
@@ -16,6 +16,7 @@ export function EditorControls({ pageIndex, compact = false }: Props) {
     addInstruction,
     addTable,
     addSubQuestion,
+    addFractionToInstruction,
     setActiveInstruction
   } = useDocumentStore();
 
@@ -23,9 +24,8 @@ export function EditorControls({ pageIndex, compact = false }: Props) {
     <div className={`relative flex justify-center no-print w-full z-10 ${compact ? 'mt-0' : 'mt-8'}`}>
       <button
         onClick={() => setShowDropdown(!showDropdown)}
-        className={`bg-black text-white ${compact ? 'p-2' : 'p-3 md:p-4'} rounded-full hover:bg-gray-800 transition-all shadow-lg ${
-          showDropdown ? 'rotate-45' : ''
-        }`}
+        className={`bg-black text-white ${compact ? 'p-2' : 'p-3 md:p-4'} rounded-full hover:bg-gray-800 transition-all shadow-lg ${showDropdown ? 'rotate-45' : ''
+          }`}
       >
         <Plus size={compact ? 18 : 24} />
       </button>
@@ -64,6 +64,15 @@ export function EditorControls({ pageIndex, compact = false }: Props) {
                 className="w-full text-left px-5 py-3 text-black hover:bg-gray-100 transition-colors flex items-center gap-3 active:bg-gray-200"
               >
                 <PlusCircle size={18} /> Add Question
+              </button>
+              <button
+                onClick={() => {
+                  addFractionToInstruction(activeInstructionId);
+                  setShowDropdown(false);
+                }}
+                className="w-full text-left px-5 py-3 text-black hover:bg-gray-100 transition-colors flex items-center gap-3 active:bg-gray-200"
+              >
+                <Divide size={18} /> Add Fraction
               </button>
               <button
                 onClick={() => {

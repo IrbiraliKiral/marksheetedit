@@ -293,7 +293,7 @@ export default function Editor() {
 
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="p-2 md:p-2.5 rounded hover:bg-gray-800 transition-colors shrink-0 hidden"
+            className="p-2 md:p-2.5 rounded hover:bg-gray-800 transition-colors shrink-0"
             title="Settings"
           >
             <SettingsIcon size={20} />

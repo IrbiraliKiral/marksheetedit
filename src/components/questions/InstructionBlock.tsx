@@ -268,14 +268,15 @@ export function InstructionBlock({ question, isActive, isGeneratingPdf }: Props)
           </SelectableElement>
 
           {/* Marks */}
-          <div className="flex items-center gap-1 w-20">
+          <div className="flex items-center gap-1 w-24">
             <span className="text-gray-400 no-print">[</span>
-            <SelectableElement id={`inst-marks-${question.id}`} type="text" defaultFontSize="12px">
+            <SelectableElement id={`inst-marks-${question.id}`} type="text" defaultFontSize="10px">
               <input
                 type="text"
                 value={question.marks}
                 onChange={(e) => updateInstruction(question.id, 'marks', e.target.value)}
-                className="w-12 text-center bg-transparent border-none focus:outline-none px-1 placeholder-gray-400"
+                className="w-16 text-center bg-transparent border-none focus:outline-none px-1 placeholder-gray-400"
+                style={{ fontSize: '10px' }}
                 placeholder="M"
               />
             </SelectableElement>
@@ -329,14 +330,15 @@ export function InstructionBlock({ question, isActive, isGeneratingPdf }: Props)
                   </div>
                 </SelectableElement>
 
-                <div className="flex items-center gap-1 w-16">
+                <div className="flex items-center gap-1 w-20">
                   <span className="text-gray-400 no-print">[</span>
-                  <SelectableElement id={`sub-marks-${sq.id}`} type="text" defaultFontSize="12px">
+                  <SelectableElement id={`sub-marks-${sq.id}`} type="text" defaultFontSize="10px">
                     <input
                       type="text"
                       value={sq.marks}
                       onChange={(e) => updateSubQuestion(question.id, sq.id, 'marks', e.target.value)}
-                      className="w-10 text-center bg-transparent border-none focus:outline-none px-1 placeholder-gray-400"
+                      className="w-14 text-center bg-transparent border-none focus:outline-none px-1 placeholder-gray-400"
+                      style={{ fontSize: '10px' }}
                       placeholder="m"
                     />
                   </SelectableElement>

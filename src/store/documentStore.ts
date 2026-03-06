@@ -36,6 +36,11 @@ interface DocumentStore {
   addFractionToSubQuestion: (instructionId: string, subQuestionId: string) => void;
   updateFraction: (instructionId: string, subQuestionId: string | null, fractionId: string, updates: Partial<Omit<Fraction, 'id'>>) => void;
   removeFraction: (instructionId: string, subQuestionId: string | null, fractionId: string) => void;
+
+  // Reorder / move actions
+  reorderQuestion: (pageIndex: number, fromId: string, toId: string) => void;
+  moveQuestion: (pageIndex: number, id: string, direction: 'up' | 'down') => void;
+  removeSubQuestion: (instructionId: string, subQuestionId: string) => void;
 }
 
 const INITIAL_STATE: DocumentState = {
@@ -307,6 +312,55 @@ export const useDocumentStore = create<DocumentStore>()(
                   return { ...sq, fractions: (sq.fractions ?? []).filter(f => f.id !== fractionId) };
                 })
               };
+            })
+          }
+        }));
+      },
+
+      reorderQuestion: (pageIndex, fromId, toId) => {
+        set((state) => {
+          const all = state.docState.questions;
+          const pageQs = all.filter(q => q.pageIndex === pageIndex);
+          const fromIdx = pageQs.findIndex(q => q.id === fromId);
+          const toIdx = pageQs.findIndex(q => q.id === toId);
+          if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return state;
+          const reordered = [...pageQs];
+          const [moved] = reordered.splice(fromIdx, 1);
+          reordered.splice(toIdx, 0, moved);
+          // Rebuild the full array replacing page questions in-order
+          let pageQIdx = 0;
+          const result = all.map(q =>
+            q.pageIndex === pageIndex ? reordered[pageQIdx++] : q
+          );
+          return { docState: { ...state.docState, questions: result } };
+        });
+      },
+
+      moveQuestion: (pageIndex, id, direction) => {
+        set((state) => {
+          const all = state.docState.questions;
+          const pageQs = all.filter(q => q.pageIndex === pageIndex);
+          const idx = pageQs.findIndex(q => q.id === id);
+          const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+          if (idx === -1 || targetIdx < 0 || targetIdx >= pageQs.length) return state;
+          const reordered = [...pageQs];
+          const [moved] = reordered.splice(idx, 1);
+          reordered.splice(targetIdx, 0, moved);
+          let pageQIdx = 0;
+          const result = all.map(q =>
+            q.pageIndex === pageIndex ? reordered[pageQIdx++] : q
+          );
+          return { docState: { ...state.docState, questions: result } };
+        });
+      },
+
+      removeSubQuestion: (instructionId, subQuestionId) => {
+        set((state) => ({
+          docState: {
+            ...state.docState,
+            questions: state.docState.questions.map(q => {
+              if (q.id !== instructionId || q.type !== 'instruction') return q;
+              return { ...q, subQuestions: q.subQuestions.filter(sq => sq.id !== subQuestionId) };
             })
           }
         }));

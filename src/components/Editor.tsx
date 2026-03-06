@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { Download, Settings as SettingsIcon, ZoomIn, ZoomOut, Maximize } from 'lucide-react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { Download, Settings as SettingsIcon, ZoomIn, ZoomOut, GripVertical, ArrowUp, ArrowDown, Trash2 } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import jsPDF from 'jspdf';
 import { useDocumentStore } from '@/store/documentStore';
@@ -9,13 +9,52 @@ import { TableBlock } from '@/components/questions/TableBlock';
 import { EditorControls } from '@/components/editor/EditorControls';
 import { ConfigPanel } from '@/components/editor/ConfigPanel';
 import { SettingsSidebar } from '@/components/editor/SettingsSidebar';
+import { ContextMenuProvider, useContextMenu, ContextMenuItem } from '@/context/ContextMenuContext';
+import { ContextMenu } from '@/components/editor/ContextMenu';
 
 export default function Editor() {
-  const { docState, activeInstructionId, setSelectedElement } = useDocumentStore();
+  return (
+    <ContextMenuProvider>
+      <EditorInner />
+      <ContextMenu />
+    </ContextMenuProvider>
+  );
+}
+
+// ── Long-press hook for mobile context menu ──────────────────────────────────
+function useLongPress(callback: (x: number, y: number) => void, duration = 520) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startPos = useRef<{ x: number; y: number } | null>(null);
+  const cancel = useCallback(() => {
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+    startPos.current = null;
+  }, []);
+  const start = useCallback((e: React.TouchEvent) => {
+    const target = e.target as HTMLElement;
+    // Don't intercept taps on inputs/textareas/buttons
+    if (['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(target.tagName)) return;
+    const t = e.touches[0];
+    startPos.current = { x: t.clientX, y: t.clientY };
+    timerRef.current = setTimeout(() => callback(t.clientX, t.clientY), duration);
+  }, [callback, duration]);
+  const move = useCallback((e: React.TouchEvent) => {
+    if (!startPos.current) return;
+    const t = e.touches[0];
+    if (Math.abs(t.clientX - startPos.current.x) > 8 || Math.abs(t.clientY - startPos.current.y) > 8) cancel();
+  }, [cancel]);
+  return { onTouchStart: start, onTouchMove: move, onTouchEnd: cancel, onTouchCancel: cancel };
+}
+
+function EditorInner() {
+  const { docState, activeInstructionId, setSelectedElement, removeQuestion, reorderQuestion, moveQuestion } = useDocumentStore();
+  const { openMenu } = useContextMenu();
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isGapOpen, setIsGapOpen] = useState(false);
   const gapRef = useRef<HTMLDivElement>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // Drag-and-drop state
+  const draggedIdRef = useRef<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
   const touchStartDistRef = useRef<number | null>(null);
@@ -379,10 +418,65 @@ export default function Editor() {
                     <div className="flex flex-col flex-grow" style={{ fontSize: '12px', marginTop: pageIndex === 0 ? '1rem' : '0' }}>
                       {docState.questions
                         .filter((q) => q.pageIndex === pageIndex)
-                        .map((q) => {
+                        .map((q, idx, pageQs) => {
+                          // ── context menu items for this question ──────────
+                          const buildMenu = (x: number, y: number) => {
+                            const items: ContextMenuItem[] = [
+                              {
+                                label: 'Move Up',
+                                icon: <ArrowUp size={14} />,
+                                onClick: () => moveQuestion(pageIndex, q.id, 'up'),
+                                disabled: idx === 0,
+                              },
+                              {
+                                label: 'Move Down',
+                                icon: <ArrowDown size={14} />,
+                                onClick: () => moveQuestion(pageIndex, q.id, 'down'),
+                                disabled: idx === pageQs.length - 1,
+                              },
+                              {
+                                label: 'Delete Question',
+                                icon: <Trash2 size={14} />,
+                                onClick: () => removeQuestion(q.id),
+                                danger: true,
+                              },
+                            ];
+                            openMenu(x, y, items);
+                          };
+
+                          // ── long-press hook (mobile) ──────────────────────
+                          // eslint-disable-next-line react-hooks/rules-of-hooks
+                          const longPress = useLongPress((x, y) => buildMenu(x, y));
+
                           if (q.type === 'instruction') {
                             return (
-                              <div key={q.id} className="relative group" style={{ marginBottom: `${docState.settings?.questionGap ?? 8}px` }}>
+                              <div
+                                key={q.id}
+                                className={`relative group/q ${dragOverId === q.id && draggedIdRef.current !== q.id
+                                    ? 'border-t-2 border-blue-500'
+                                    : ''
+                                  }`}
+                                style={{ marginBottom: `${docState.settings?.questionGap ?? 8}px` }}
+                                draggable={!isGeneratingPdf}
+                                onDragStart={() => { draggedIdRef.current = q.id; }}
+                                onDragOver={(e) => { e.preventDefault(); setDragOverId(q.id); }}
+                                onDrop={() => {
+                                  if (draggedIdRef.current && draggedIdRef.current !== q.id) {
+                                    reorderQuestion(pageIndex, draggedIdRef.current, q.id);
+                                  }
+                                  draggedIdRef.current = null;
+                                  setDragOverId(null);
+                                }}
+                                onDragEnd={() => { draggedIdRef.current = null; setDragOverId(null); }}
+                                onContextMenu={(e) => { e.preventDefault(); buildMenu(e.clientX, e.clientY); }}
+                                {...longPress}
+                              >
+                                {/* Drag handle */}
+                                {!isGeneratingPdf && (
+                                  <div className="absolute -left-5 top-1/2 -translate-y-1/2 opacity-0 group-hover/q:opacity-100 max-[850px]:opacity-50 transition-opacity cursor-grab active:cursor-grabbing no-print select-none">
+                                    <GripVertical size={16} className="text-gray-400" />
+                                  </div>
+                                )}
                                 <InstructionBlock
                                   question={q}
                                   isActive={activeInstructionId === q.id}
@@ -394,7 +488,32 @@ export default function Editor() {
 
                           if (q.type === 'table') {
                             return (
-                              <div key={q.id} className="relative group" style={{ marginBottom: `${docState.settings?.questionGap ?? 8}px` }}>
+                              <div
+                                key={q.id}
+                                className={`relative group/q ${dragOverId === q.id && draggedIdRef.current !== q.id
+                                    ? 'border-t-2 border-blue-500'
+                                    : ''
+                                  }`}
+                                style={{ marginBottom: `${docState.settings?.questionGap ?? 8}px` }}
+                                draggable={!isGeneratingPdf}
+                                onDragStart={() => { draggedIdRef.current = q.id; }}
+                                onDragOver={(e) => { e.preventDefault(); setDragOverId(q.id); }}
+                                onDrop={() => {
+                                  if (draggedIdRef.current && draggedIdRef.current !== q.id) {
+                                    reorderQuestion(pageIndex, draggedIdRef.current, q.id);
+                                  }
+                                  draggedIdRef.current = null;
+                                  setDragOverId(null);
+                                }}
+                                onDragEnd={() => { draggedIdRef.current = null; setDragOverId(null); }}
+                                onContextMenu={(e) => { e.preventDefault(); buildMenu(e.clientX, e.clientY); }}
+                                {...longPress}
+                              >
+                                {!isGeneratingPdf && (
+                                  <div className="absolute -left-5 top-1/2 -translate-y-1/2 opacity-0 group-hover/q:opacity-100 max-[850px]:opacity-50 transition-opacity cursor-grab active:cursor-grabbing no-print select-none">
+                                    <GripVertical size={16} className="text-gray-400" />
+                                  </div>
+                                )}
                                 <TableBlock question={q} />
                               </div>
                             );

@@ -1,10 +1,11 @@
 'use client';
 
 import { useRef, useCallback } from 'react';
-import { X } from 'lucide-react';
+import { X, Trash2 } from 'lucide-react';
 import { InstructionQuestion, Fraction } from '@/types';
 import { useDocumentStore } from '@/store/documentStore';
 import { SelectableElement } from '../editor/SelectableElement';
+import { useContextMenu } from '@/context/ContextMenuContext';
 
 interface Props {
   question: InstructionQuestion;
@@ -217,7 +218,32 @@ export function InstructionBlock({ question, isActive, isGeneratingPdf }: Props)
     updateFraction,
     removeFraction,
     setFocusedField,
+    removeSubQuestion,
   } = useDocumentStore();
+  const { openMenu } = useContextMenu();
+
+  // Long-press for mobile sub-question context menu
+  const useLongPress = (cb: (x: number, y: number) => void, dur = 520) => {
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const startPos = useRef<{ x: number; y: number } | null>(null);
+    const cancel = useCallback(() => {
+      if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
+      startPos.current = null;
+    }, []);
+    const start = useCallback((e: React.TouchEvent) => {
+      const target = e.target as HTMLElement;
+      if (['INPUT', 'TEXTAREA', 'BUTTON', 'SELECT'].includes(target.tagName)) return;
+      const t = e.touches[0];
+      startPos.current = { x: t.clientX, y: t.clientY };
+      timerRef.current = setTimeout(() => cb(t.clientX, t.clientY), dur);
+    }, [cb, dur]);
+    const move = useCallback((e: React.TouchEvent) => {
+      if (!startPos.current) return;
+      const t = e.touches[0];
+      if (Math.abs(t.clientX - startPos.current.x) > 8 || Math.abs(t.clientY - startPos.current.y) > 8) cancel();
+    }, [cancel]);
+    return { onTouchStart: start, onTouchMove: move, onTouchEnd: cancel, onTouchCancel: cancel };
+  };
 
   const instContainerRef = useRef<HTMLDivElement>(null);
   const subContainerRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -287,65 +313,84 @@ export function InstructionBlock({ question, isActive, isGeneratingPdf }: Props)
         {/* Sub Questions */}
         {question.subQuestions.length > 0 && (
           <div className="pl-12 flex flex-col gap-2">
-            {question.subQuestions.map(sq => (
-              <div key={sq.id} className="flex items-start gap-2">
-                <SelectableElement id={`sub-serial-${sq.id}`} type="text" defaultFontSize="12px">
-                  <input
-                    type="text"
-                    value={sq.serialNumber}
-                    onChange={(e) => updateSubQuestion(question.id, sq.id, 'serialNumber', e.target.value)}
-                    className="w-8 text-left bg-transparent border-none focus:outline-none px-1 placeholder-gray-400"
-                    placeholder="i."
-                  />
-                </SelectableElement>
-
-                <SelectableElement id={`sub-text-${sq.id}`} type="text" defaultFontSize="12px" className="flex-1">
-                  <div
-                    ref={el => { subContainerRefs.current[sq.id] = el; }}
-                    className="relative w-full"
-                  >
-                    <QuestionTextarea
-                      value={sq.instruction}
-                      placeholder="Write question here..."
-                      onChange={(v) => updateSubQuestion(question.id, sq.id, 'instruction', v)}
-                      onCursorChange={(x, y) =>
-                        setFocusedField({ kind: 'subQuestion', instructionId: question.id, subQuestionId: sq.id, x, y })
-                      }
-                    />
-                    {/* Fraction overlays */}
-                    {(sq.fractions ?? []).map(frac => (
-                      <FractionWidget
-                        key={frac.id}
-                        fraction={frac}
-                        isGeneratingPdf={isGeneratingPdf}
-                        onUpdate={(updates) =>
-                          updateFraction(question.id, sq.id, frac.id, updates)
-                        }
-                        onRemove={() => removeFraction(question.id, sq.id, frac.id)}
-                        onDrag={(x, y) => {
-                          updateFraction(question.id, sq.id, frac.id, { x, y });
-                        }}
-                      />
-                    ))}
-                  </div>
-                </SelectableElement>
-
-                <div className="flex items-center gap-1 w-20">
-                  <span className="text-gray-400 no-print">[</span>
-                  <SelectableElement id={`sub-marks-${sq.id}`} type="text" defaultFontSize="10px">
+            {question.subQuestions.map(sq => {
+              const openSubMenu = (x: number, y: number) => {
+                openMenu(x, y, [
+                  {
+                    label: 'Delete Sub-question',
+                    icon: <Trash2 size={14} />,
+                    onClick: () => removeSubQuestion(question.id, sq.id),
+                    danger: true,
+                  },
+                ]);
+              };
+              // eslint-disable-next-line react-hooks/rules-of-hooks
+              const sqLongPress = useLongPress((x, y) => openSubMenu(x, y));
+              return (
+                <div
+                  key={sq.id}
+                  className="flex items-start gap-2 group/sq"
+                  onContextMenu={(e) => { e.preventDefault(); openSubMenu(e.clientX, e.clientY); }}
+                  {...sqLongPress}
+                >
+                  <SelectableElement id={`sub-serial-${sq.id}`} type="text" defaultFontSize="12px">
                     <input
                       type="text"
-                      value={sq.marks}
-                      onChange={(e) => updateSubQuestion(question.id, sq.id, 'marks', e.target.value)}
-                      className="w-14 text-center bg-transparent border-none focus:outline-none px-1 placeholder-gray-400"
-                      style={{ fontSize: '10px' }}
-                      placeholder="m"
+                      value={sq.serialNumber}
+                      onChange={(e) => updateSubQuestion(question.id, sq.id, 'serialNumber', e.target.value)}
+                      className="w-8 text-left bg-transparent border-none focus:outline-none px-1 placeholder-gray-400"
+                      placeholder="i."
                     />
                   </SelectableElement>
-                  <span className="text-gray-400 no-print">]</span>
+
+                  <SelectableElement id={`sub-text-${sq.id}`} type="text" defaultFontSize="12px" className="flex-1">
+                    <div
+                      ref={el => { subContainerRefs.current[sq.id] = el; }}
+                      className="relative w-full"
+                    >
+                      <QuestionTextarea
+                        value={sq.instruction}
+                        placeholder="Write question here..."
+                        onChange={(v) => updateSubQuestion(question.id, sq.id, 'instruction', v)}
+                        onCursorChange={(x, y) =>
+                          setFocusedField({ kind: 'subQuestion', instructionId: question.id, subQuestionId: sq.id, x, y })
+                        }
+                      />
+                      {/* Fraction overlays */}
+                      {(sq.fractions ?? []).map(frac => (
+                        <FractionWidget
+                          key={frac.id}
+                          fraction={frac}
+                          isGeneratingPdf={isGeneratingPdf}
+                          onUpdate={(updates) =>
+                            updateFraction(question.id, sq.id, frac.id, updates)
+                          }
+                          onRemove={() => removeFraction(question.id, sq.id, frac.id)}
+                          onDrag={(x, y) => {
+                            updateFraction(question.id, sq.id, frac.id, { x, y });
+                          }}
+                        />
+                      ))}
+                    </div>
+                  </SelectableElement>
+
+                  <div className="flex items-center gap-1 w-20">
+                    <span className="text-gray-400 no-print">[</span>
+                    <SelectableElement id={`sub-marks-${sq.id}`} type="text" defaultFontSize="10px">
+                      <input
+                        type="text"
+                        value={sq.marks}
+                        onChange={(e) => updateSubQuestion(question.id, sq.id, 'marks', e.target.value)}
+                        className="w-14 text-center bg-transparent border-none focus:outline-none px-1 placeholder-gray-400"
+                        style={{ fontSize: '10px' }}
+                        placeholder="m"
+                      />
+                    </SelectableElement>
+                    <span className="text-gray-400 no-print">]</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

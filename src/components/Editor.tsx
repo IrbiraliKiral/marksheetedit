@@ -13,6 +13,8 @@ import { SettingsSidebar } from '@/components/editor/SettingsSidebar';
 export default function Editor() {
   const { docState, activeInstructionId, setSelectedElement } = useDocumentStore();
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isGapOpen, setIsGapOpen] = useState(false);
+  const gapRef = useRef<HTMLDivElement>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -83,6 +85,17 @@ export default function Editor() {
       document.removeEventListener('touchend', handleTouchEnd);
     };
   }, []); // Run once — refs give handlers live access without re-registration
+
+  // Close gap dropdown when clicking outside of it
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (gapRef.current && !gapRef.current.contains(e.target as Node)) {
+        setIsGapOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
 
   // Derive the maximum page index from existing questions. Starts at 0.
@@ -287,22 +300,29 @@ export default function Editor() {
           </button>
 
           {/* Question Gap Quick Control */}
-          <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-1.5 border border-gray-800 shrink-0 relative group">
-            <label className="text-xs text-gray-400 font-medium px-1 cursor-pointer">Gap: {docState.settings?.questionGap ?? 8}</label>
-            <div className="absolute right-0 top-full mt-2 w-48 bg-gray-900 border border-gray-800 rounded-lg p-3 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 flex items-center gap-3">
-              <input
-                type="range"
-                min="1"
-                max="32"
-                value={docState.settings?.questionGap ?? 8}
-                onChange={(e) => useDocumentStore.getState().updateSettings({ questionGap: parseInt(e.target.value) })}
-                className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-                title={`Question Gap: ${docState.settings?.questionGap ?? 8}px`}
-              />
-              <span className="text-xs text-gray-300 w-6 text-right font-medium">
-                {docState.settings?.questionGap ?? 8}
-              </span>
-            </div>
+          <div ref={gapRef} className="flex items-center gap-2 bg-gray-900 rounded-lg p-1.5 border border-gray-800 shrink-0 relative">
+            <button
+              onClick={() => setIsGapOpen(o => !o)}
+              className="text-xs text-gray-400 font-medium px-1 cursor-pointer hover:text-white transition-colors"
+            >
+              Gap: {docState.settings?.questionGap ?? 8}
+            </button>
+            {isGapOpen && (
+              <div className="absolute right-0 top-full mt-2 w-52 bg-gray-900 border border-gray-800 rounded-lg p-3 shadow-xl z-50 flex items-center gap-3">
+                <input
+                  type="range"
+                  min="1"
+                  max="64"
+                  value={docState.settings?.questionGap ?? 8}
+                  onChange={(e) => useDocumentStore.getState().updateSettings({ questionGap: parseInt(e.target.value) })}
+                  className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-white"
+                  title={`Question Gap: ${docState.settings?.questionGap ?? 8}px`}
+                />
+                <span className="text-xs text-gray-300 w-8 text-right font-medium shrink-0">
+                  {docState.settings?.questionGap ?? 8}px
+                </span>
+              </div>
+            )}
           </div>
 
           <button

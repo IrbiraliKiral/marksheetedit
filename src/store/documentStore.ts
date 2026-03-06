@@ -1,18 +1,24 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
-import { DocumentState, InstructionQuestion, TableQuestion, TableRow, ElementConfig, InlineSegment } from '@/types';
+import { DocumentState, InstructionQuestion, TableQuestion, TableRow, ElementConfig, Fraction } from '@/types';
+
+type FocusedFieldInfo =
+  | { kind: 'instruction'; instructionId: string; x: number; y: number }
+  | { kind: 'subQuestion'; instructionId: string; subQuestionId: string; x: number; y: number };
 
 interface DocumentStore {
   docState: DocumentState;
   activeInstructionId: string | null;
   selectedElementId: string | null;
+  focusedField: FocusedFieldInfo | null;
 
   // Actions
   updateHeader: (field: keyof Omit<DocumentState, 'questions' | 'elementConfigs' | 'settings'>, value: string) => void;
   updateSettings: (settings: Partial<NonNullable<DocumentState['settings']>>) => void;
   setActiveInstruction: (id: string | null) => void;
   setSelectedElement: (id: string | null) => void;
+  setFocusedField: (info: FocusedFieldInfo | null) => void;
   updateElementConfig: (id: string, config: Partial<ElementConfig>) => void;
 
   // Question Actions
@@ -25,25 +31,11 @@ interface DocumentStore {
   addTableRow: (tableId: string) => void;
   removeQuestion: (id: string) => void;
 
-  // Inline fraction actions (operate on InlineSegment[] content within an instruction or sub-question)
+  // Fraction actions
   addFractionToInstruction: (instructionId: string) => void;
   addFractionToSubQuestion: (instructionId: string, subQuestionId: string) => void;
-  updateInstructionSegment: (instructionId: string, segmentId: string, field: 'value' | 'numerator' | 'denominator', value: string) => void;
-  updateSubQuestionSegment: (instructionId: string, subQuestionId: string, segmentId: string, field: 'value' | 'numerator' | 'denominator', value: string) => void;
-  removeInstructionSegment: (instructionId: string, segmentId: string) => void;
-  removeSubQuestionSegment: (instructionId: string, subQuestionId: string, segmentId: string) => void;
-}
-
-// Helper: ensure an instruction has a content array, seeding from plain `instruction` string if needed
-function ensureContent(q: InstructionQuestion): InlineSegment[] {
-  if (q.content && q.content.length > 0) return q.content;
-  return [{ type: 'text', id: uuidv4(), value: q.instruction }];
-}
-
-// Helper for sub-questions
-function ensureSubContent(sq: { instruction: string; content?: InlineSegment[] }): InlineSegment[] {
-  if (sq.content && sq.content.length > 0) return sq.content;
-  return [{ type: 'text', id: uuidv4(), value: sq.instruction }];
+  updateFraction: (instructionId: string, subQuestionId: string | null, fractionId: string, updates: Partial<Omit<Fraction, 'id'>>) => void;
+  removeFraction: (instructionId: string, subQuestionId: string | null, fractionId: string) => void;
 }
 
 const INITIAL_STATE: DocumentState = {
@@ -58,6 +50,7 @@ const INITIAL_STATE: DocumentState = {
   elementConfigs: {},
   settings: {
     efficientMode: false,
+    questionGap: 8, // Default gap in pixels (e.g., matching mb-2 = 8px)
   }
 };
 
@@ -67,25 +60,28 @@ export const useDocumentStore = create<DocumentStore>()(
       docState: INITIAL_STATE,
       activeInstructionId: null,
       selectedElementId: null,
+      focusedField: null,
 
       updateHeader: (field, value) =>
         set((state) => ({
           docState: { ...state.docState, [field]: value }
         })),
 
-      updateSettings: (settings: Partial<NonNullable<DocumentState['settings']>>) =>
+      updateSettings: (settings) =>
         set((state) => ({
           docState: {
             ...state.docState,
-            settings: { ...state.docState.settings, ...settings, efficientMode: settings.efficientMode ?? state.docState.settings?.efficientMode ?? false }
+            settings: {
+              ...state.docState.settings,
+              efficientMode: settings.efficientMode ?? state.docState.settings?.efficientMode ?? false,
+              questionGap: settings.questionGap ?? state.docState.settings?.questionGap ?? 8
+            }
           }
         })),
 
-      setActiveInstruction: (id) =>
-        set({ activeInstructionId: id }),
-
-      setSelectedElement: (id) =>
-        set({ selectedElementId: id }),
+      setActiveInstruction: (id) => set({ activeInstructionId: id }),
+      setSelectedElement: (id) => set({ selectedElementId: id }),
+      setFocusedField: (info) => set({ focusedField: info }),
 
       updateElementConfig: (id, config) =>
         set((state) => {
@@ -94,15 +90,12 @@ export const useDocumentStore = create<DocumentStore>()(
           return {
             docState: {
               ...state.docState,
-              elementConfigs: {
-                ...prevConfigs,
-                [id]: { ...prevConfig, ...config }
-              }
+              elementConfigs: { ...prevConfigs, [id]: { ...prevConfig, ...config } }
             }
           };
         }),
 
-      addInstruction: (pageIndex: number) => {
+      addInstruction: (pageIndex) => {
         const newInstruction: InstructionQuestion = {
           id: uuidv4(),
           type: 'instruction',
@@ -111,33 +104,22 @@ export const useDocumentStore = create<DocumentStore>()(
           instruction: '',
           marks: '',
           subQuestions: [],
-          content: [{ type: 'text', id: uuidv4(), value: '' }]
         };
         set((state) => ({
-          docState: {
-            ...state.docState,
-            questions: [...state.docState.questions, newInstruction]
-          },
-          activeInstructionId: newInstruction.id
+          docState: { ...state.docState, questions: [...state.docState.questions, newInstruction] },
+          activeInstructionId: newInstruction.id,
         }));
       },
 
-      addTable: (pageIndex: number) => {
+      addTable: (pageIndex) => {
         const newTable: TableQuestion = {
           id: uuidv4(),
           type: 'table',
           pageIndex,
-          rows: Array.from({ length: 4 }).map(() => ({
-            id: uuidv4(),
-            columnA: '',
-            columnB: ''
-          }))
+          rows: Array.from({ length: 4 }).map(() => ({ id: uuidv4(), columnA: '', columnB: '' }))
         };
         set((state) => ({
-          docState: {
-            ...state.docState,
-            questions: [...state.docState.questions, newTable]
-          }
+          docState: { ...state.docState, questions: [...state.docState.questions, newTable] }
         }));
       },
 
@@ -151,13 +133,7 @@ export const useDocumentStore = create<DocumentStore>()(
                   ...q,
                   subQuestions: [
                     ...q.subQuestions,
-                    {
-                      id: uuidv4(),
-                      serialNumber: '',
-                      instruction: '',
-                      marks: '',
-                      content: [{ type: 'text' as const, id: uuidv4(), value: '' }]
-                    }
+                    { id: uuidv4(), serialNumber: '', instruction: '', marks: '' }
                   ]
                 };
               }
@@ -172,9 +148,7 @@ export const useDocumentStore = create<DocumentStore>()(
           docState: {
             ...state.docState,
             questions: state.docState.questions.map(q =>
-              (q.id === id && q.type === 'instruction')
-                ? { ...q, [field]: value }
-                : q
+              q.id === id && q.type === 'instruction' ? { ...q, [field]: value } : q
             )
           }
         }));
@@ -189,9 +163,7 @@ export const useDocumentStore = create<DocumentStore>()(
                 return {
                   ...q,
                   subQuestions: q.subQuestions.map(sq =>
-                    sq.id === subQuestionId
-                      ? { ...sq, [field]: value }
-                      : sq
+                    sq.id === subQuestionId ? { ...sq, [field]: value } : sq
                   )
                 };
               }
@@ -209,11 +181,7 @@ export const useDocumentStore = create<DocumentStore>()(
               if (q.id === tableId && q.type === 'table') {
                 return {
                   ...q,
-                  rows: q.rows.map(row =>
-                    row.id === rowId
-                      ? { ...row, [field]: value }
-                      : row
-                  )
+                  rows: q.rows.map(row => row.id === rowId ? { ...row, [field]: value } : row)
                 };
               }
               return q;
@@ -228,10 +196,7 @@ export const useDocumentStore = create<DocumentStore>()(
             ...state.docState,
             questions: state.docState.questions.map(q => {
               if (q.id === tableId && q.type === 'table') {
-                return {
-                  ...q,
-                  rows: [...q.rows, { id: uuidv4(), columnA: '', columnB: '' }]
-                };
+                return { ...q, rows: [...q.rows, { id: uuidv4(), columnA: '', columnB: '' }] };
               }
               return q;
             })
@@ -249,18 +214,19 @@ export const useDocumentStore = create<DocumentStore>()(
         }));
       },
 
-      // ---- Inline fraction actions ----
-
       addFractionToInstruction: (instructionId) => {
+        const { focusedField } = get();
+        const x = focusedField?.kind === 'instruction' && focusedField.instructionId === instructionId
+          ? focusedField.x : 40;
+        const y = focusedField?.kind === 'instruction' && focusedField.instructionId === instructionId
+          ? focusedField.y : 0;
+        const newFraction: Fraction = { id: uuidv4(), numerator: '', denominator: '', x, y };
         set((state) => ({
           docState: {
             ...state.docState,
             questions: state.docState.questions.map(q => {
               if (q.id === instructionId && q.type === 'instruction') {
-                const existing = ensureContent(q);
-                const fraction: InlineSegment = { type: 'fraction', id: uuidv4(), numerator: '', denominator: '' };
-                const trailing: InlineSegment = { type: 'text', id: uuidv4(), value: '' };
-                return { ...q, content: [...existing, fraction, trailing] };
+                return { ...q, fractions: [...(q.fractions ?? []), newFraction] };
               }
               return q;
             })
@@ -269,6 +235,12 @@ export const useDocumentStore = create<DocumentStore>()(
       },
 
       addFractionToSubQuestion: (instructionId, subQuestionId) => {
+        const { focusedField } = get();
+        const x = focusedField?.kind === 'subQuestion' && focusedField.subQuestionId === subQuestionId
+          ? focusedField.x : 40;
+        const y = focusedField?.kind === 'subQuestion' && focusedField.subQuestionId === subQuestionId
+          ? focusedField.y : 0;
+        const newFraction: Fraction = { id: uuidv4(), numerator: '', denominator: '', x, y };
         set((state) => ({
           docState: {
             ...state.docState,
@@ -278,10 +250,7 @@ export const useDocumentStore = create<DocumentStore>()(
                   ...q,
                   subQuestions: q.subQuestions.map(sq => {
                     if (sq.id !== subQuestionId) return sq;
-                    const existing = ensureSubContent(sq);
-                    const fraction: InlineSegment = { type: 'fraction', id: uuidv4(), numerator: '', denominator: '' };
-                    const trailing: InlineSegment = { type: 'text', id: uuidv4(), value: '' };
-                    return { ...sq, content: [...existing, fraction, trailing] };
+                    return { ...sq, fractions: [...(sq.fractions ?? []), newFraction] };
                   })
                 };
               }
@@ -291,85 +260,53 @@ export const useDocumentStore = create<DocumentStore>()(
         }));
       },
 
-      updateInstructionSegment: (instructionId, segmentId, field, value) => {
+      updateFraction: (instructionId, subQuestionId, fractionId, updates) => {
         set((state) => ({
           docState: {
             ...state.docState,
             questions: state.docState.questions.map(q => {
-              if (q.id === instructionId && q.type === 'instruction') {
+              if (q.id !== instructionId || q.type !== 'instruction') return q;
+              if (subQuestionId === null) {
                 return {
                   ...q,
-                  content: (q.content ?? []).map(seg =>
-                    seg.id === segmentId ? { ...seg, [field]: value } as InlineSegment : seg
+                  fractions: (q.fractions ?? []).map(f =>
+                    f.id === fractionId ? { ...f, ...updates } : f
                   )
                 };
               }
-              return q;
+              return {
+                ...q,
+                subQuestions: q.subQuestions.map(sq => {
+                  if (sq.id !== subQuestionId) return sq;
+                  return {
+                    ...sq,
+                    fractions: (sq.fractions ?? []).map(f =>
+                      f.id === fractionId ? { ...f, ...updates } : f
+                    )
+                  };
+                })
+              };
             })
           }
         }));
       },
 
-      updateSubQuestionSegment: (instructionId, subQuestionId, segmentId, field, value) => {
+      removeFraction: (instructionId, subQuestionId, fractionId) => {
         set((state) => ({
           docState: {
             ...state.docState,
             questions: state.docState.questions.map(q => {
-              if (q.id === instructionId && q.type === 'instruction') {
-                return {
-                  ...q,
-                  subQuestions: q.subQuestions.map(sq => {
-                    if (sq.id !== subQuestionId) return sq;
-                    return {
-                      ...sq,
-                      content: (sq.content ?? []).map(seg =>
-                        seg.id === segmentId ? { ...seg, [field]: value } as InlineSegment : seg
-                      )
-                    };
-                  })
-                };
+              if (q.id !== instructionId || q.type !== 'instruction') return q;
+              if (subQuestionId === null) {
+                return { ...q, fractions: (q.fractions ?? []).filter(f => f.id !== fractionId) };
               }
-              return q;
-            })
-          }
-        }));
-      },
-
-      removeInstructionSegment: (instructionId, segmentId) => {
-        set((state) => ({
-          docState: {
-            ...state.docState,
-            questions: state.docState.questions.map(q => {
-              if (q.id === instructionId && q.type === 'instruction') {
-                return {
-                  ...q,
-                  content: (q.content ?? []).filter(seg => seg.id !== segmentId)
-                };
-              }
-              return q;
-            })
-          }
-        }));
-      },
-
-      removeSubQuestionSegment: (instructionId, subQuestionId, segmentId) => {
-        set((state) => ({
-          docState: {
-            ...state.docState,
-            questions: state.docState.questions.map(q => {
-              if (q.id === instructionId && q.type === 'instruction') {
-                return {
-                  ...q,
-                  subQuestions: q.subQuestions.map(sq => {
-                    if (sq.id !== subQuestionId) return sq;
-                    return {
-                      ...sq,
-                      content: (sq.content ?? []).filter(seg => seg.id !== segmentId)
-                    };
-                  })
-                };
-              }
-              return q;
+              return {
+                ...q,
+                subQuestions: q.subQuestions.map(sq => {
+                  if (sq.id !== subQuestionId) return sq;
+                  return { ...sq, fractions: (sq.fractions ?? []).filter(f => f.id !== fractionId) };
+                })
+              };
             })
           }
         }));
@@ -377,6 +314,7 @@ export const useDocumentStore = create<DocumentStore>()(
     }),
     {
       name: 'question-sheet-storage',
+      partialize: (state) => ({ docState: state.docState }),
     }
   )
 );

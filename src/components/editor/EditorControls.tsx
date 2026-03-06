@@ -13,12 +13,27 @@ export function EditorControls({ pageIndex, compact = false }: Props) {
   const [showDropdown, setShowDropdown] = useState(false);
   const {
     activeInstructionId,
+    focusedField,
     addInstruction,
     addTable,
     addSubQuestion,
     addFractionToInstruction,
+    addFractionToSubQuestion,
     setActiveInstruction
   } = useDocumentStore();
+
+  const handleAddFraction = () => {
+    if (!activeInstructionId) return;
+    if (
+      focusedField?.kind === 'subQuestion' &&
+      focusedField.instructionId === activeInstructionId
+    ) {
+      addFractionToSubQuestion(focusedField.instructionId, focusedField.subQuestionId);
+    } else {
+      addFractionToInstruction(activeInstructionId);
+    }
+    setShowDropdown(false);
+  };
 
   return (
     <div className={`relative flex justify-center no-print w-full z-10 ${compact ? 'mt-0' : 'mt-8'}`}>
@@ -66,10 +81,7 @@ export function EditorControls({ pageIndex, compact = false }: Props) {
                 <PlusCircle size={18} /> Add Question
               </button>
               <button
-                onClick={() => {
-                  addFractionToInstruction(activeInstructionId);
-                  setShowDropdown(false);
-                }}
+                onClick={handleAddFraction}
                 className="w-full text-left px-5 py-3 text-black hover:bg-gray-100 transition-colors flex items-center gap-3 active:bg-gray-200"
               >
                 <Divide size={18} /> Add Fraction
@@ -88,7 +100,7 @@ export function EditorControls({ pageIndex, compact = false }: Props) {
         </div>
       )}
 
-      {/* Click outside to close dropdown area */}
+      {/* Click outside to close dropdown */}
       {showDropdown && (
         <div
           className="fixed inset-0 z-0"

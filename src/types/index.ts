@@ -1,8 +1,12 @@
 export type QuestionType = 'instruction' | 'table';
 
-export type InlineSegment =
-  | { type: 'text'; id: string; value: string }
-  | { type: 'fraction'; id: string; numerator: string; denominator: string };
+export interface Fraction {
+  id: string;
+  numerator: string;
+  denominator: string;
+  x: number; // px offset from left of the question text area
+  y: number; // px offset from top of the question text area
+}
 
 export interface BaseQuestion {
   id: string;
@@ -16,8 +20,7 @@ export interface InstructionQuestion extends BaseQuestion {
   instruction: string;
   marks: string;
   subQuestions: SubQuestion[];
-  // Inline rich content — when present, overrides the plain `instruction` string
-  content?: InlineSegment[];
+  fractions?: Fraction[]; // draggable fractions overlaid on the instruction text
 }
 
 export interface SubQuestion {
@@ -25,8 +28,7 @@ export interface SubQuestion {
   serialNumber: string;
   instruction: string;
   marks: string;
-  // Inline rich content — when present, overrides the plain `instruction` string
-  content?: InlineSegment[];
+  fractions?: Fraction[]; // draggable fractions overlaid on the sub-question text
 }
 
 export interface TableQuestion extends BaseQuestion {
@@ -62,5 +64,6 @@ export interface DocumentState {
   elementConfigs?: Record<string, ElementConfig>;
   settings?: {
     efficientMode: boolean;
+    questionGap?: number;
   };
 }

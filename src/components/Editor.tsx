@@ -280,11 +280,31 @@ export default function Editor() {
 
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="p-2 md:p-2.5 rounded hover:bg-gray-800 transition-colors shrink-0"
+            className="p-2 md:p-2.5 rounded hover:bg-gray-800 transition-colors shrink-0 hidden"
             title="Settings"
           >
             <SettingsIcon size={20} />
           </button>
+
+          {/* Question Gap Quick Control */}
+          <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-1.5 border border-gray-800 shrink-0 relative group">
+            <label className="text-xs text-gray-400 font-medium px-1 cursor-pointer">Gap: {docState.settings?.questionGap ?? 8}</label>
+            <div className="absolute right-0 top-full mt-2 w-48 bg-gray-900 border border-gray-800 rounded-lg p-3 shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 flex items-center gap-3">
+              <input
+                type="range"
+                min="1"
+                max="32"
+                value={docState.settings?.questionGap ?? 8}
+                onChange={(e) => useDocumentStore.getState().updateSettings({ questionGap: parseInt(e.target.value) })}
+                className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                title={`Question Gap: ${docState.settings?.questionGap ?? 8}px`}
+              />
+              <span className="text-xs text-gray-300 w-6 text-right font-medium">
+                {docState.settings?.questionGap ?? 8}
+              </span>
+            </div>
+          </div>
+
           <button
             onClick={generatePDF}
             disabled={isGeneratingPdf}
@@ -342,7 +362,7 @@ export default function Editor() {
                         .map((q) => {
                           if (q.type === 'instruction') {
                             return (
-                              <div key={q.id} className="mb-6 relative group">
+                              <div key={q.id} className="relative group" style={{ marginBottom: `${docState.settings?.questionGap ?? 8}px` }}>
                                 <InstructionBlock
                                   question={q}
                                   isActive={activeInstructionId === q.id}
@@ -354,7 +374,7 @@ export default function Editor() {
 
                           if (q.type === 'table') {
                             return (
-                              <div key={q.id} className="mb-6 relative group">
+                              <div key={q.id} className="relative group" style={{ marginBottom: `${docState.settings?.questionGap ?? 8}px` }}>
                                 <TableBlock question={q} />
                               </div>
                             );
